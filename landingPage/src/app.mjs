@@ -1,5 +1,10 @@
 import { StatusCodes } from "http-status-codes";
-import { DBConn, HTTPError, HTTPResponse, catchTryAsyncErrors } from './utils/helper.mjs';
+import {
+  DBConn,
+  HTTPError,
+  HTTPResponse,
+  catchTryAsyncErrors,
+} from "./utils/helper.mjs";
 import { ObjectId } from "mongodb";
 
 export const handler = async (event) => {
@@ -7,20 +12,19 @@ export const handler = async (event) => {
     const method = event.httpMethod;
     const path = event.path;
     const queryParams = event.queryStringParameters || {};
-    const body = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || "{}");
 
     const client = await DBConn();
-    const DB = client.db('10D');
+    const DB = client.db("10D");
 
     switch (method) {
       case "GET":
         if (path === "/getChainsList") {
           // return await getChainsList(queryParams, DB);
           return catchTryAsyncErrors(getChainsList)(queryParams, DB);
-
         } else if (path === "/getMediaList") {
           return await getMediaList(queryParams, DB);
-        } else if (path === '/getTopNodes') {
+        } else if (path === "/getTopNodes") {
           return await getTopNodesAcrossChains(queryParams, DB);
         }
         break;
@@ -51,40 +55,39 @@ const getChainsList = async (queryParams, DB) => {
   const limit = Number(queryParams.limit) || 10;
   const skip = (page - 1) * limit;
 
+  const chains = await DB.collection("chains")
+    .aggregate([{ $skip: skip }, { $limit: limit }])
+    .toArray();
 
-    const chains = await DB.collection("chains").aggregate([
-      { $skip: skip },
-      { $limit: limit }
-    ]).toArray();
+  const totalChainsCount = await DB.collection("chains").countDocuments();
 
-    const totalChainsCount = await DB.collection("chains").countDocuments();
+  let totalInvestment = 0;
+  for (const chain of chains) {
+    const collectionName = `treeNodes${chain.name}`;
+    const firstNode = await DB.collection(collectionName).findOne({
+      _id: chain.rootNode,
+    });
+    const totalMembers = firstNode.totalMembers;
+    const chainInvestment = totalMembers * chain.seedAmount;
+    chain.investment = chainInvestment;
+    totalInvestment += chainInvestment;
+  }
 
-    let totalInvestment = 0;
-    for (const chain of chains) {
-      const collectionName = `treeNodes${chain.name}`;
-      const firstNode = await DB.collection(collectionName).findOne({ _id: chain.rootNode });
-      const totalMembers = firstNode.totalMembers;
-      const chainInvestment = totalMembers * chain.seedAmount;
-      chain.investment = chainInvestment;
-      totalInvestment += chainInvestment;
-    }
-
-    return {
-      statusCode: StatusCodes.OK,
-      body: JSON.stringify({
-        message: "Success",
-        chains: chains,
-        count: totalChainsCount,
-        totalInvestment: totalInvestment
-      })
-    };
- 
+  return {
+    statusCode: StatusCodes.OK,
+    body: JSON.stringify({
+      message: "Success",
+      chains: chains,
+      count: totalChainsCount,
+      totalInvestment: totalInvestment,
+    }),
+  };
 };
 
 const getMediaList = async (queryParams, DB) => {
   try {
     const media = await DB.collection("media").findOne({});
-    console.log('media', media);
+    console.log("media", media);
 
     if (!media) {
       return {
@@ -104,7 +107,7 @@ const getMediaList = async (queryParams, DB) => {
     console.error("An error occurred:", error);
     return {
       statusCode: StatusCodes.INTERNAL_SERVER_ERROR,
-      body: JSON.stringify({ message: "Something Went Wrong", error: error })
+      body: JSON.stringify({ message: "Something Went Wrong", error: error }),
     };
   }
 };
@@ -136,7 +139,9 @@ const getTopNodesAcrossChains = async (queryParams, DB) => {
       }
     );
 
-    const paginatedNodes = await DB.collection(chainNames[0]).aggregate(pipeline).toArray();
+    const paginatedNodes = await DB.collection(chainNames[0])
+      .aggregate(pipeline)
+      .toArray();
 
     return {
       statusCode: StatusCodes.OK,
@@ -164,7 +169,7 @@ const searchNodes = async (queryParams, DB) => {
     if (!searchField) {
       return {
         statusCode: StatusCodes.BAD_REQUEST,
-        body: JSON.stringify({ message: "SearchField required" })
+        body: JSON.stringify({ message: "SearchField required" }),
       };
     }
 
@@ -173,7 +178,7 @@ const searchNodes = async (queryParams, DB) => {
     if (!chainNames.length) {
       return {
         statusCode: StatusCodes.NOT_FOUND,
-        body: JSON.stringify({ message: "Chains not found" })
+        body: JSON.stringify({ message: "Chains not found" }),
       };
     }
 
@@ -204,18 +209,20 @@ const searchNodes = async (queryParams, DB) => {
       { $limit: limit },
     ]);
 
-    const nodes = await DB.collection(chainNames[0]).aggregate(pipeline).toArray();
+    const nodes = await DB.collection(chainNames[0])
+      .aggregate(pipeline)
+      .toArray();
 
     if (!nodes.length) {
       return {
         statusCode: StatusCodes.NOT_FOUND,
-        body: JSON.stringify({ message: "Nodes not found" })
+        body: JSON.stringify({ message: "Nodes not found" }),
       };
     }
 
     return {
       statusCode: StatusCodes.OK,
-      body: JSON.stringify({ message: "Nodes fetched successfully", nodes })
+      body: JSON.stringify({ message: "Nodes fetched successfully", nodes }),
     };
   } catch (error) {
     console.error("An error occurred:", error);
